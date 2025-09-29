@@ -366,5 +366,4 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         logging.error(f"WebSocket error for client {client_id}: {e}", exc_info=True)
         manager.disconnect(client_id)
 
-# To run: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-uvicorn.run(app, host="0.0.0.0", port=80)
+# To run: uvicorn server:app --host 0.0.0.0 --port 8080 --reload
