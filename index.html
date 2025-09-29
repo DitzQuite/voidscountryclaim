@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Territory Conquest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #1a202c;
+        }
+        #grid-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+            background-color: #2d3748;
+        }
+        canvas { display: block; }
+        .ui-panel {
+            position: absolute;
+            background-color: rgba(26, 32, 44, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 1000; opacity: 0; visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0s 0.3s;
+        }
+        .modal.active { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
+        .modal-content { transform: scale(0.95); transition: transform 0.3s ease; }
+        .modal.active .modal-content { transform: scale(1); }
+        .zoom-controls {
+            right: 1rem; bottom: 1rem; display: flex;
+            flex-direction: column; gap: 0.5rem;
+        }
+        .zoom-btn {
+            width: 2.5rem; height: 2.5rem; font-size: 1.25rem;
+            background-color: rgba(45, 55, 72, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white; border-radius: 50%; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            transition: background-color 0.2s;
+        }
+        .zoom-btn:hover { background-color: rgba(74, 85, 104, 0.9); }
+        .chat-box { max-height: 200px; overflow-y: auto; }
+        .chat-message { word-break: break-word; }
+        .chat-tabs button.active { border-color: #3b82f6; background-color: #3b82f6; }
+    </style>
+</head>
+<body>
+
+    <div id="grid-container">
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <div id="server-status" class="ui-panel" style="top: 1rem; right: 1rem; padding: 0.5rem 1rem;">Connecting...</div>
+
+    <div class="ui-panel" style="top: 1rem; left: 1rem; min-width: 320px; display: flex; flex-direction: column; gap: 1rem;">
+        <div>
+            <h1 class="text-2xl font-bold mb-2 text-white">Territory Conquest</h1>
+            <div id="country-info"><p class="text-gray-400">Spectating Mode</p></div>
+            <div id="user-info" class="mt-4 p-3 bg-gray-900/50 rounded-lg border border-gray-700"></div>
+        </div>
+        <div id="ruler-controls" class="hidden"></div>
+    </div>
+
+    <div class="ui-panel" style="bottom: 1rem; left: 1rem; width: 400px;">
+        <div class="chat-tabs flex mb-2 border-b border-gray-700">
+            <button id="global-tab" class="px-4 py-2 text-sm font-medium border-b-2 border-transparent hover:text-white transition active">Global</button>
+            <button id="country-tab" class="px-4 py-2 text-sm font-medium text-gray-400 border-b-2 border-transparent hover:text-white transition">Country</button>
+        </div>
+        <div id="global-chat-container">
+            <div id="global-chat-box" class="chat-box p-2 bg-gray-900/50 rounded-md border border-gray-700 mb-2"></div>
+            <form id="global-chat-form" class="flex gap-2">
+                <input type="text" id="global-chat-input" placeholder="Type in global chat..." class="flex-grow px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors">Send</button>
+            </form>
+        </div>
+        <div id="country-chat-container" class="hidden">
+            <div id="country-chat-box" class="chat-box p-2 bg-gray-900/50 rounded-md border border-gray-700 mb-2"></div>
+            <form id="country-chat-form" class="flex gap-2">
+                <input type="text" id="country-chat-input" placeholder="Type in country chat..." class="flex-grow px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="ui-panel zoom-controls">
+        <button id="zoom-in-btn" class="zoom-btn"><i class="fas fa-plus"></i></button>
+        <button id="zoom-out-btn" class="zoom-btn"><i class="fas fa-minus"></i></button>
+    </div>
+
+    <div id="create-join-modal" class="modal">
+        <div class="modal-content ui-panel max-w-sm w-full">
+            <h2 class="text-xl font-bold mb-4 text-white">Join the Conquest</h2>
+            <p class="text-gray-400 mb-6">Create a new nation or join an existing one to expand your influence.</p>
+            <div class="mb-4">
+                <input type="text" id="country-name" placeholder="Enter nation name" class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button id="create-country-btn" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors duration-200">Found Nation</button>
+            <div class="my-4 text-center text-gray-500 text-sm">OR</div>
+            <div id="join-country-list" class="max-h-48 overflow-y-auto pr-2"></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const gridContainer = document.getElementById('grid-container');
+
+        const GRID_SIZE = 10000;
+        const TILE_SIZE = 10;
+        let scale = 0.1;
+        let panX = - (GRID_SIZE * TILE_SIZE * scale) / 2 + window.innerWidth / 2;
+        let panY = - (GRID_SIZE * TILE_SIZE * scale) / 2 + window.innerHeight / 2;
+        let isPanning = false;
+        let startPanX = 0;
+        let startPanY = 0;
+
+        let clientId = localStorage.getItem('clientId') || crypto.randomUUID();
+        localStorage.setItem('clientId', clientId);
+        let userCountryId = null;
+        let countries = {};
+        let gridData = {};
+
+        const statusDiv = document.getElementById('server-status');
+        let ws;
+
+        function connect() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws/${clientId}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                statusDiv.textContent = 'Connected';
+                statusDiv.classList.add('bg-green-500/30', 'text-green-300');
+                statusDiv.classList.remove('bg-yellow-500/30', 'text-yellow-300', 'bg-red-500/30', 'text-red-300');
+            };
+
+            ws.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
+
+            ws.onclose = () => {
+                statusDiv.textContent = 'Reconnecting...';
+                statusDiv.classList.add('bg-red-500/30', 'text-red-300');
+                statusDiv.classList.remove('bg-green-500/30', 'text-green-300');
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error("WebSocket error:", error);
+                ws.close();
+            };
+        }
+        
+        function sendToServer(data) {
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
+        }
+
+        function handleServerMessage(message) {
+            const type = message.type;
+            const payload = message.payload;
+
+            if (type === 'initial_state') {
+                countries = payload.countries || {};
+                gridData = payload.grid || {};
+                const potentialUserCountry = payload.users?.[clientId]?.country;
+                if (potentialUserCountry) {
+                    userCountryId = potentialUserCountry;
+                    // Pan to country on initial load if they are already in one
+                    panToCountryCenter(userCountryId);
+                }
+                updateUI();
+                drawGrid();
+            } else if (type === 'state_update') {
+                countries = payload.countries || countries;
+                gridData = { ...gridData, ...payload.grid }; // Merge grid updates
+                updateUI();
+                drawGrid();
+            } else if (type === 'user_update' && payload.country) {
+                userCountryId = payload.country;
+                document.getElementById('create-join-modal').classList.remove('active');
+                panToCountryCenter(userCountryId); // Pan on join/create
+                updateUI();
+            } else if (type === 'global_chat_message') {
+                appendChatMessage('global', payload);
+            } else if (type === 'country_chat_message') {
+                appendChatMessage('country', payload);
+            } else if (message.error) {
+                alert(`Server: ${message.error}`);
+            }
+        }
+
+        function drawGrid() {
+            canvas.width = gridContainer.clientWidth;
+            canvas.height = gridContainer.clientHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(panX, panY);
+            ctx.scale(scale, scale);
+
+            const viewLeft = -panX / scale;
+            const viewTop = -panY / scale;
+            const viewRight = viewLeft + canvas.width / scale;
+            const viewBottom = viewTop + canvas.height / scale;
+
+            const startX = Math.max(0, Math.floor(viewLeft / TILE_SIZE));
+            const startY = Math.max(0, Math.floor(viewTop / TILE_SIZE));
+            const endX = Math.min(GRID_SIZE, Math.ceil(viewRight / TILE_SIZE));
+            const endY = Math.min(GRID_SIZE, Math.ceil(viewBottom / TILE_SIZE));
+
+            for (let x = startX; x < endX; x++) {
+                for (let y = startY; y < endY; y++) {
+                    const key = `${x},${y}`;
+                    const tile = gridData[key];
+                    if (tile && countries[tile.country]) {
+                        ctx.fillStyle = countries[tile.country].color;
+                        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+            ctx.restore();
+        }
+
+        function updateUI() {
+            const countryInfoDiv = document.getElementById('country-info');
+            const userInfoDiv = document.getElementById('user-info');
+            const rulerControlsDiv = document.getElementById('ruler-controls');
+            const modal = document.getElementById('create-join-modal');
+
+            if (userCountryId && countries[userCountryId]) {
+                const country = countries[userCountryId];
+                const rulerName = country.ruler ? `User...${country.ruler.slice(-4)}` : 'None';
+                const isRuler = country.ruler === clientId;
+                
+                countryInfoDiv.innerHTML = `
+                    <h2 class="text-2xl font-bold" style="color:${country.color}">${country.name}</h2>
+                    <p class="text-sm text-gray-300">Ruler: ${rulerName}</p>
+                    <p class="text-sm text-gray-300">Territory: ${country.territorySize.toLocaleString()} tiles</p>
+                    <p class="text-sm text-gray-300">Population: ${country.population.toLocaleString()}</p>
+                `;
+
+                if (isRuler) {
+                    rulerControlsDiv.classList.remove('hidden');
+                    rulerControlsDiv.innerHTML = `
+                        <h3 class="text-lg font-bold border-b border-gray-700 pb-2 mb-3">Ruler Controls</h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-sm text-gray-400">Change Name</label>
+                                <div class="flex gap-2 mt-1">
+                                    <input type="text" id="rename-input" class="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded-md" value="${country.name}">
+                                    <button id="rename-btn" class="px-3 bg-blue-600 rounded-md hover:bg-blue-700">Save</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-sm text-gray-400">Change Color</label>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <input type="color" id="color-input" class="p-1 h-10 w-14 block bg-gray-700 border border-gray-600 cursor-pointer rounded-lg" value="${country.color}">
+                                    <button id="color-btn" class="px-3 py-1 bg-blue-600 rounded-md hover:bg-blue-700">Save</button>
+                                </div>
+                            </div>
+                             <button id="abdicate-btn" class="w-full text-center py-2 bg-red-800 hover:bg-red-700 rounded-md transition-colors">Abdicate Rule</button>
+                        </div>
+                    `;
+                    document.getElementById('rename-btn').onclick = () => sendToServer({ type: 'rename_country', new_name: document.getElementById('rename-input').value });
+                    document.getElementById('color-btn').onclick = () => sendToServer({ type: 'change_color', color: document.getElementById('color-input').value });
+                    document.getElementById('abdicate-btn').onclick = () => {
+                        if(confirm('Are you sure you want to abdicate? The nation will become rulerless.')) {
+                            sendToServer({ type: 'abdicate' });
+                        }
+                    };
+                } else {
+                    rulerControlsDiv.classList.add('hidden');
+                    rulerControlsDiv.innerHTML = '';
+                }
+
+                modal.classList.remove('active');
+            } else {
+                 countryInfoDiv.innerHTML = `<p class="text-gray-400">Spectating Mode</p>`;
+                 rulerControlsDiv.classList.add('hidden');
+                 rulerControlsDiv.innerHTML = '';
+                 modal.classList.add('active');
+            }
+            userInfoDiv.innerHTML = `<p class="text-sm text-gray-400">Your ID: <span class="font-mono text-gray-200">User...${clientId.slice(-4)}</span></p>`;
+            updateJoinList();
+        }
+
+        function updateJoinList() {
+            const joinList = document.getElementById('join-country-list');
+            joinList.innerHTML = '';
+            const sortedCountries = Object.values(countries).sort((a,b) => b.population - a.population);
+
+            if (sortedCountries.length === 0) {
+                 joinList.innerHTML = '<p class="text-center text-gray-500">No nations have been founded yet.</p>';
+                 return;
+            }
+
+            for (const country of sortedCountries) {
+                const btn = document.createElement('button');
+                btn.innerHTML = `
+                    <div class="flex items-center justify-between w-full">
+                        <div class="text-left">
+                            <span class="font-semibold text-white">${country.name}</span>
+                            <span class="text-xs text-gray-400 block">${country.population.toLocaleString()} members</span>
+                        </div>
+                        <span class="w-4 h-4 rounded-full" style="background-color:${country.color};"></span>
+                    </div>
+                `;
+                btn.className = 'w-full p-3 bg-gray-700/50 rounded-md hover:bg-gray-600/50 transition-colors duration-200 mt-2';
+                btn.onclick = () => sendToServer({type: "join_country", country_id: country.id });
+                joinList.appendChild(btn);
+            }
+        }
+
+        function appendChatMessage(type, payload) {
+            const chatBox = document.getElementById(`${type}-chat-box`);
+            const messageEl = document.createElement('div');
+            messageEl.classList.add('chat-message', 'mb-1', 'text-sm');
+            
+            const senderName = payload.sender_name || 'System';
+            const senderColor = payload.sender_color || '#FFFFFF';
+
+            messageEl.innerHTML = `
+                <strong style="color: ${senderColor};">[${senderName}]</strong>:
+                <span class="text-gray-300">${payload.message}</span>
+            `;
+            chatBox.appendChild(messageEl);
+            chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll
+        }
+
+        function panAndZoomTo(worldX, worldY, targetScale) {
+            const duration = 1000;
+            const startScale = scale;
+            const startPanX = panX;
+            const startPanY = panY;
+            const endPanX = -worldX * targetScale + canvas.width / 2;
+            const endPanY = -worldY * targetScale + canvas.height / 2;
+            let startTime = null;
+
+            function animate(currentTime) {
+                if (!startTime) startTime = currentTime;
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easedProgress = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+
+                scale = startScale + (targetScale - startScale) * easedProgress;
+                panX = startPanX + (endPanX - startPanX) * easedProgress;
+                panY = startPanY + (endPanY - startPanY) * easedProgress;
+
+                drawGrid();
+                if (progress < 1) requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function panToCountryCenter(countryId) {
+            let totalX = 0, totalY = 0, count = 0;
+            for (const key in gridData) {
+                if (gridData[key].country === countryId) {
+                    const [x, y] = key.split(',').map(Number);
+                    totalX += x;
+                    totalY += y;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                const centerX = (totalX / count) * TILE_SIZE + TILE_SIZE / 2;
+                const centerY = (totalY / count) * TILE_SIZE + TILE_SIZE / 2;
+                panAndZoomTo(centerX, centerY, 0.5);
+            }
+        }
+
+        document.getElementById('create-country-btn').addEventListener('click', () => {
+            const countryName = document.getElementById('country-name').value;
+            if (countryName) sendToServer({ type: "create_country", name: countryName });
+        });
+        
+        // Chat Tabs
+        document.getElementById('global-tab').addEventListener('click', () => {
+            document.getElementById('global-chat-container').classList.remove('hidden');
+            document.getElementById('country-chat-container').classList.add('hidden');
+            document.getElementById('global-tab').classList.add('active');
+            document.getElementById('country-tab').classList.remove('active');
+        });
+
+        document.getElementById('country-tab').addEventListener('click', () => {
+            document.getElementById('global-chat-container').classList.add('hidden');
+            document.getElementById('country-chat-container').classList.remove('hidden');
+            document.getElementById('global-tab').classList.remove('active');
+            document.getElementById('country-tab').classList.add('active');
+        });
+        
+        // Chat Forms
+        document.getElementById('global-chat-form').addEventListener('submit', e => {
+            e.preventDefault();
+            const input = document.getElementById('global-chat-input');
+            if(input.value) {
+                sendToServer({ type: 'global_chat', message: input.value });
+                input.value = '';
+            }
+        });
+        document.getElementById('country-chat-form').addEventListener('submit', e => {
+            e.preventDefault();
+            const input = document.getElementById('country-chat-input');
+            if(input.value) {
+                sendToServer({ type: 'country_chat', message: input.value });
+                input.value = '';
+            }
+        });
+
+        // Panning
+        gridContainer.addEventListener('mousedown', (e) => {
+            if (e.target.id !== 'game-canvas') return;
+            isPanning = true;
+            startPanX = e.clientX - panX;
+            startPanY = e.clientY - panY;
+            gridContainer.style.cursor = 'grabbing';
+        });
+        ['mouseup', 'mouseleave'].forEach(event => gridContainer.addEventListener(event, () => {
+             isPanning = false;
+             gridContainer.style.cursor = 'grab';
+        }));
+        gridContainer.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                panX = e.clientX - startPanX;
+                panY = e.clientY - startPanY;
+                drawGrid();
+            }
+        });
+
+        // Zooming
+        gridContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const scaleAmount = 1.1;
+            const mouseX = e.clientX - gridContainer.offsetLeft;
+            const mouseY = e.clientY - gridContainer.offsetTop;
+            const worldX = (mouseX - panX) / scale;
+            const worldY = (mouseY - panY) / scale;
+
+            if (e.deltaY < 0) scale *= scaleAmount;
+            else scale /= scaleAmount;
+            scale = Math.max(0.01, Math.min(5, scale));
+
+            panX = mouseX - worldX * scale;
+            panY = mouseY - worldY * scale;
+            drawGrid();
+        });
+
+        // Click to claim tile
+        gridContainer.addEventListener('click', (e) => {
+            if (isPanning || e.target.id !== 'game-canvas') return; // Don't claim if the user was just panning
+            if (!userCountryId) return; // Spectators can't claim
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const worldX = (mouseX - panX) / scale;
+            const worldY = (mouseY - panY) / scale;
+
+            const tileX = Math.floor(worldX / TILE_SIZE);
+            const tileY = Math.floor(worldY / TILE_SIZE);
+            
+            sendToServer({ type: 'claim_tile', x: tileX, y: tileY });
+        });
+
+        document.getElementById('zoom-in-btn').addEventListener('click', () => {
+            const mouseX = canvas.width / 2;
+            const mouseY = canvas.height / 2;
+            const worldX = (mouseX - panX) / scale;
+            const worldY = (mouseY - panY) / scale;
+            scale = Math.min(5, scale * 1.5);
+            panX = mouseX - worldX * scale;
+            panY = mouseY - worldY * scale;
+            drawGrid();
+        });
+
+        document.getElementById('zoom-out-btn').addEventListener('click', () => {
+            const mouseX = canvas.width / 2;
+            const mouseY = canvas.height / 2;
+            const worldX = (mouseX - panX) / scale;
+            const worldY = (mouseY - panY) / scale;
+            scale = Math.max(0.01, scale / 1.5);
+            panX = mouseX - worldX * scale;
+            panY = mouseY - worldY * scale;
+            drawGrid();
+        });
+
+        window.addEventListener('resize', drawGrid);
+        
+        connect();
+        drawGrid();
+    </script>
+</body>
+</html>
