@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Set
 from uuid import uuid4
+import uvicorn
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -366,3 +367,4 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         manager.disconnect(client_id)
 
 # To run: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+unicorn.run(app, host="0.0.0.0", port=80)
